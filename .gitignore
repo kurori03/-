@@ -1,0 +1,4 @@
+# 実データはリポジトリに含めない
+data.json
+data.json.tmp
+data.bak.json

@@ -531,15 +531,26 @@ function freeMinutes(st, date){
   return Math.max(0, total-used);
 }
 
-/* ---------- storage ---------- */
+/* ---------- storage ----------
+   保存先は起動時に自動判定します。
+   1) 社内サーバー（server.js または api.php が同じ場所にある）… 全員で共有
+   2) claude.ai の Artifact として公開されている場合 …………… 全員で共有
+   3) どちらでもない（ファイルを直接開いた等）…………………… この端末のみ
+------------------------------------ */
 let db = null;
+let mode = "local";        // "server" | "artifact" | "local"
+let apiKind = "node";      // "node" | "php"
+let srvVersion = -1;
+let pollTimer = null;
+let pollPaused = false;
+const POLL_MS = 4000;
 const LS_SETTINGS="dispatch.settings", LS_REQ="dispatch.requests", LS_ME="dispatch.me";
 
 function loadLocal(){
   try{
     const s = localStorage.getItem(LS_SETTINGS); if(s) state.settings = JSON.parse(s);
     const r = localStorage.getItem(LS_REQ);      if(r) state.requests = JSON.parse(r);
-  }catch(e){ /* stored data unusable — keep defaults */ }
+  }catch(e){ /* 保存データが読めない場合は初期値のまま */ }
 }
 function loadMe(){
   try{ const m = localStorage.getItem(LS_ME); if(m) state.me = JSON.parse(m); }catch(e){}
@@ -558,12 +569,65 @@ function setConn(cls, text){
   document.getElementById("connText").textContent = text;
 }
 
+/* --- 社内サーバー --- */
+function apiUrl(path, q){
+  let u = apiKind==="php" ? "api.php?path="+encodeURIComponent(path) : "api/"+path;
+  if(q) u += (u.indexOf("?")>=0 ? "&" : "?") + q;
+  return u;
+}
+async function tryServer(){
+  const probes = [["node","api/state"],["php","api.php?path=state"]];
+  for(const [kind,u] of probes){
+    try{
+      const res = await fetch(u, {cache:"no-store"});
+      if(!res.ok) continue;
+      const j = await res.json();
+      if(j && typeof j.version === "number") return {kind, state:j};
+    }catch(e){ /* このサーバーではない */ }
+  }
+  return null;
+}
+function applyServer(j){
+  if(!j || typeof j.version !== "number") return;
+  srvVersion = j.version;
+  if(j.settings && Array.isArray(j.settings.staff) && j.settings.staff.length)
+    state.settings = {staff: j.settings.staff};
+  state.requests = j.requests || {};
+  renderAll();
+}
+async function callServer(path, opts, q){
+  const res = await fetch(apiUrl(path, q), Object.assign({cache:"no-store"}, opts));
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  return await res.json();
+}
+function startPoll(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async ()=>{
+    if(pollPaused || state.tab==="config") return;   // 設定を編集中は上書きしない
+    try{
+      const j = await callServer("state", {});
+      if(j.version !== srvVersion) applyServer(j);
+      setConn("live","社内サーバーで共有中");
+    }catch(e){ setConn("local","サーバーに接続できません"); }
+  }, POLL_MS);
+}
+
 async function initStore(){
   loadMe(); loadLocal(); renderAll();
+
+  const srv = await tryServer();
+  if(srv){
+    mode = "server"; apiKind = srv.kind;
+    setConn("live","社内サーバーで共有中");
+    applyServer(srv.state);
+    startPoll();
+    return;
+  }
+
   let ns = null;
   try{ if(typeof claude!=="undefined" && claude.use) ns = await claude.use("db"); }catch(e){ ns=null; }
   if(!ns){ setConn("local","この端末のみに保存"); return; }
-  db = ns;
+  db = ns; mode = "artifact";
   setConn("live","全員で共有中");
   db.doc("config/settings").onSnapshot(snap=>{
     if(snap.exists){ const d=snap.data(); if(d && Array.isArray(d.staff)) state.settings = {staff:d.staff}; }
@@ -577,19 +641,49 @@ async function initStore(){
   }, ()=>{ setConn("local","この端末のみに保存"); });
 }
 
+function saveFailed(){
+  alert("保存できませんでした。\n通信状況を確認して、もう一度お試しください。");
+}
+
 async function persistSettings(){
+  if(mode==="server"){
+    try{
+      pollPaused = true;
+      applyServer(await callServer("settings", {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({staff: state.settings.staff})
+      }));
+      return true;
+    }catch(e){ return false; }
+    finally{ pollPaused = false; }
+  }
   if(db){ try{ await db.doc("config/settings").set({staff: state.settings.staff}); return true; }
-    catch(e){ return false; } }
+          catch(e){ return false; } }
   saveLocal(); renderAll(); return true;
 }
+
 async function persistRequest(r){
-  state.requests[r.id] = r;
-  if(db){ try{ await db.collection("requests").doc(r.id).set(r); }catch(e){ alert("保存できませんでした。通信を確認してもう一度お試しください。"); } }
+  state.requests[r.id] = r; renderAll();
+  if(mode==="server"){
+    try{
+      applyServer(await callServer("request", {
+        method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(r)
+      }));
+    }catch(e){ saveFailed(); }
+    return;
+  }
+  if(db){ try{ await db.collection("requests").doc(r.id).set(r); }catch(e){ saveFailed(); } }
   else saveLocal();
   renderAll();
 }
+
 async function removeRequest(id){
-  delete state.requests[id];
+  delete state.requests[id]; renderAll();
+  if(mode==="server"){
+    try{ applyServer(await callServer("request", {method:"DELETE"}, "id="+encodeURIComponent(id))); }
+    catch(e){ saveFailed(); }
+    return;
+  }
   if(db){ try{ await db.collection("requests").doc(id).delete(); }catch(e){} }
   else saveLocal();
   renderAll();

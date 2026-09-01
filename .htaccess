@@ -1,0 +1,4 @@
+# データファイルを直接ダウンロードされないようにする（Apache用）
+<FilesMatch "^data(\.bak)?\.json(\.tmp)?$">
+  Require all denied
+</FilesMatch>
