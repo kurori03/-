@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>回送・納車依頼ボード</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -93,7 +94,18 @@ button{cursor:pointer}
 .conn{
   display:inline-flex; align-items:center; gap:6px;
   font-size:11px; color:var(--ink-3); letter-spacing:.04em;
+  background:none; border:1px solid transparent; border-radius:999px; padding:4px 10px;
 }
+.conn:hover{border-color:var(--line); color:var(--ink-2)}
+.conn .q{
+  display:inline-grid; place-items:center; width:14px; height:14px; border-radius:50%;
+  border:1px solid currentColor; font-size:9px; line-height:1; opacity:.7;
+}
+.okbox{
+  background:var(--appr-bg); border:1px solid var(--appr-line); color:var(--appr);
+  border-radius:7px; padding:8px 11px; font-size:12.5px;
+}
+.diag-fix{white-space:pre-wrap}
 .conn .dot{width:7px; height:7px; border-radius:50%; background:var(--line-strong)}
 .conn.live .dot{background:var(--appr)}
 .conn.local .dot{background:var(--pend)}
@@ -351,7 +363,7 @@ textarea{resize:vertical; min-height:64px}
       <h1>回送・納車依頼ボード</h1>
       <span class="sub">PART STAFF DISPATCH</span>
     </div>
-    <span class="conn" id="conn"><span class="dot"></span><span id="connText">接続中…</span></span>
+    <button class="conn" id="conn" title="接続とデータの保存先を確認"><span class="dot"></span><span id="connText">接続中…</span><span class="q" aria-hidden="true">?</span></button>
     <button class="me-btn" id="meBtn"><span class="av" id="meAv">?</span><span id="meName">名前を設定</span><span class="role" id="meRole"></span></button>
   </div>
   <div class="tabs" role="tablist">
@@ -445,6 +457,17 @@ textarea{resize:vertical; min-height:64px}
     <header><h3 id="detailTitle">依頼の詳細</h3><span class="pill" id="detailPill"></span><button class="iconbtn" id="detailClose" aria-label="閉じる">✕</button></header>
     <div class="body" id="detailBody"></div>
     <footer id="detailActions"></footer>
+  </div>
+</div>
+
+<div class="scrim" id="diagScrim" hidden>
+  <div class="modal" style="max-width:540px" role="dialog" aria-modal="true" aria-labelledby="diagTitle">
+    <header><h3 id="diagTitle">接続とデータの保存先</h3><button class="iconbtn" id="diagClose" aria-label="閉じる">✕</button></header>
+    <div class="body" id="diagBody"></div>
+    <footer>
+      <button class="btn" id="diagRetry">再接続を試す</button>
+      <button class="btn primary" id="diagOk">閉じる</button>
+    </footer>
   </div>
 </div>
 
@@ -557,6 +580,7 @@ let srvVersion = -1;
 let pollTimer = null;
 let pollPaused = false;
 let adminNames = [];
+let lastSyncAt = null;
 const POLL_MS = 4000;
 const LS_SETTINGS="dispatch.settings", LS_REQ="dispatch.requests", LS_ME="dispatch.me";
 
@@ -604,6 +628,7 @@ async function tryServer(){
 function applyServer(j){
   if(!j || typeof j.version !== "number") return;
   srvVersion = j.version;
+  lastSyncAt = new Date();
   if(Array.isArray(j.admins)) adminNames = j.admins;
   if(j.settings && Array.isArray(j.settings.staff) && j.settings.staff.length)
     state.settings = {staff: j.settings.staff};
@@ -725,6 +750,73 @@ async function removeRequest(id){
   if(db){ try{ await db.collection("requests").doc(id).delete(); }catch(e){} }
   else saveLocal();
   renderAll();
+}
+
+/* ---------- 接続の診断 ---------- */
+function diagInfo(){
+  const proto = location.protocol;
+  if(mode === "server") return {
+    ok: true,
+    title: "全員で共有されています",
+    where: "社内サーバーの data.json",
+    why: "このページは社内サーバーから配信されていて、データを預かるプログラムにも接続できています。誰かが依頼を作ると、開いている全員の画面に数秒で反映されます。",
+    fix: ""
+  };
+  if(mode === "artifact") return {
+    ok: true,
+    title: "claude.ai 上で共有されています",
+    where: "claude.ai のデータベース",
+    why: "claude.ai の共有データベースに接続しています。このページを開ける人の間でデータが共有されます。",
+    fix: ""
+  };
+  if(proto === "file:") return {
+    ok: false,
+    title: "共有されていません",
+    where: "このPCのブラウザの中だけ",
+    why: "ファイルを直接開いています（アドレスが file:// で始まっています）。共有フォルダに置いたファイルをダブルクリックした場合もこの状態になります。入力した内容はこのPCにだけ残り、他のPCには伝わりません。",
+    fix: "サーバー役のPCで start.bat を起動してください。\n黒い画面に「社内の他のPCから: http://…」というアドレスが出るので、\nそれを各PCのブラウザのアドレス欄に入力して開いてください。"
+  };
+  return {
+    ok: false,
+    title: "共有されていません",
+    where: "このPCのブラウザの中だけ",
+    why: "ページは http で開けていますが、データを預かるプログラムに接続できませんでした。",
+    fix: "【Node.js版】server.js が起動したままか確認してください。黒い画面を閉じると止まります。\n【PHP版】api.php が index.html と同じフォルダにあるか、そのフォルダで PHP が動くかを確認してください。"
+  };
+}
+function renderDiag(){
+  const d = diagInfo();
+  const sync = lastSyncAt
+    ? lastSyncAt.getHours()+":"+String(lastSyncAt.getMinutes()).padStart(2,"0")+":"+String(lastSyncAt.getSeconds()).padStart(2,"0")
+    : "—";
+  document.getElementById("diagBody").innerHTML =
+    '<div class="'+(d.ok ? "okbox" : "warn")+'"><b>'+esc(d.title)+'</b></div>' +
+    '<p style="margin:0; font-size:13px; color:var(--ink-2)">'+esc(d.why)+'</p>' +
+    '<dl class="dl">' +
+      '<dt>保存先</dt><dd>'+esc(d.where)+'</dd>' +
+      '<dt>アドレス</dt><dd style="word-break:break-all; font-size:12px">'+esc(location.href)+'</dd>' +
+      (mode==="server" ? '<dt>最終同期</dt><dd class="num">'+sync+'</dd>' : '') +
+    '</dl>' +
+    (d.fix ? '<div class="field"><label>このあとどうするか</label><p class="card-note diag-fix" style="margin:0">'+esc(d.fix)+'</p></div>' : '');
+}
+async function reconnect(){
+  const btn = document.getElementById("diagRetry");
+  btn.disabled = true; btn.textContent = "接続中…";
+  try{
+    if(mode !== "artifact"){
+      const srv = await tryServer();
+      if(srv){
+        mode = "server"; apiKind = srv.kind;
+        setConn("live","社内サーバーで共有中");
+        applyServer(srv.state);
+        startPoll();
+      }
+    }
+  }catch(e){ /* つながらなければ表示はそのまま */ }
+  finally{
+    btn.disabled = false; btn.textContent = "再接続を試す";
+    renderDiag();
+  }
 }
 
 /* ---------- header / identity ---------- */
@@ -1169,6 +1261,14 @@ function showMeError(msg){
   const el = document.getElementById("me-err");
   el.textContent = msg; el.hidden = false;
 }
+document.getElementById("conn").addEventListener("click", ()=>{
+  renderDiag();
+  document.getElementById("diagScrim").hidden = false;
+});
+["diagClose","diagOk"].forEach(id=>
+  document.getElementById(id).addEventListener("click", ()=>{ document.getElementById("diagScrim").hidden = true; }));
+document.getElementById("diagRetry").addEventListener("click", reconnect);
+
 document.getElementById("meBtn").addEventListener("click", ()=>{
   document.getElementById("me-name").value = state.me.name;
   document.getElementById("me-role").value = state.me.role;
@@ -1217,9 +1317,9 @@ document.addEventListener("keydown", e=>{
     if(t){ e.preventDefault(); const [sid,di]=t.getAttribute("data-new").split("|"); openForm({staffId:sid, date:di}); return; }
   }
   if(e.key!=="Escape") return;
-  ["formScrim","detailScrim","meScrim"].forEach(id=>{ document.getElementById(id).hidden = true; });
+  ["formScrim","detailScrim","meScrim","diagScrim"].forEach(id=>{ document.getElementById(id).hidden = true; });
 });
-[["formScrim"],["detailScrim"],["meScrim"]].forEach(([id])=>{
+[["formScrim"],["detailScrim"],["meScrim"],["diagScrim"]].forEach(([id])=>{
   document.getElementById(id).addEventListener("mousedown", e=>{
     if(e.target.id===id) document.getElementById(id).hidden = true;
   });
