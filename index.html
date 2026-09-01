@@ -148,6 +148,8 @@ main{max-width:1440px; margin:0 auto; padding:18px}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.ghost{background:none; border-color:transparent; color:var(--ink-3)}
 .btn.sm{padding:4px 10px; font-size:12px}
+button:disabled{opacity:.45; cursor:not-allowed}
+input:disabled,select:disabled{opacity:.55; cursor:not-allowed}
 .spacer{margin-left:auto}
 
 /* ---------- summary ---------- */
@@ -394,6 +396,7 @@ textarea{resize:vertical; min-height:64px}
     <div class="panel">
       <h3>スタッフと勤務時間</h3>
       <p class="hint">ここで設定した勤務曜日・勤務時間をもとに、ボード上の空き時間を計算します。</p>
+      <p class="warn" id="cfgNote" hidden style="margin-bottom:14px">スタッフ設定の変更は管理者のみ行えます。右上の「自分の情報」から管理者としてログインしてください。</p>
       <div id="staffEditor"></div>
       <div style="display:flex; gap:8px; margin-top:14px">
         <button class="btn" id="addStaff">＋ スタッフを追加</button>
@@ -455,7 +458,13 @@ textarea{resize:vertical; min-height:64px}
         <option value="manager">管理者（承認する）</option>
         <option value="staff">パートスタッフ（作業する）</option>
       </select></div>
-      <p style="font-size:12px; color:var(--ink-3); margin:0">承認・差戻しの操作は管理者のみ行えます。この設定はこの端末にのみ保存されます。</p>
+      <div class="field" id="me-pwField" hidden>
+        <label for="me-pw">管理者パスワード</label>
+        <input type="password" id="me-pw" autocomplete="current-password" placeholder="パスワードを入力">
+        <span id="me-adminHint" style="font-size:11.5px; color:var(--ink-3)"></span>
+      </div>
+      <div class="warn" id="me-err" hidden></div>
+      <p style="font-size:12px; color:var(--ink-3); margin:0">承認・差戻し・削除・スタッフ設定の変更は管理者のみ行えます。この設定はこの端末にのみ保存されます。</p>
     </div>
     <footer><button class="btn" id="meCancel">キャンセル</button><button class="btn primary" id="meSave">保存</button></footer>
   </div>
@@ -490,7 +499,7 @@ const DEFAULT_SETTINGS = {
 const state = {
   settings: clone(DEFAULT_SETTINGS),
   requests: {},
-  me: {name:"", role:"requester"},
+  me: {name:"", role:"requester", token:""},
   tab: "board",
   mode: "week",
   anchor: startOfDay(new Date()),
@@ -515,7 +524,11 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;
 function typeOf(id){ return JOB_TYPES.find(t=>t.id===id) || JOB_TYPES[0]; }
 function staffOf(id){ return state.settings.staff.find(s=>s.id===id) || null; }
 function uid(){ return "r"+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-function isManager(){ return state.me.role==="manager"; }
+function isManager(){
+  if(state.me.role !== "manager") return false;
+  if(mode === "server") return !!state.me.token;   // サーバー運用時はパスワード認証が必須
+  return true;
+}
 function stampNow(){ const d=new Date(); return iso(d)+" "+hhmm(d.getHours()*60+d.getMinutes()); }
 
 function requestsFor(staffId, dateIso){
@@ -543,6 +556,7 @@ let apiKind = "node";      // "node" | "php"
 let srvVersion = -1;
 let pollTimer = null;
 let pollPaused = false;
+let adminNames = [];
 const POLL_MS = 4000;
 const LS_SETTINGS="dispatch.settings", LS_REQ="dispatch.requests", LS_ME="dispatch.me";
 
@@ -590,15 +604,39 @@ async function tryServer(){
 function applyServer(j){
   if(!j || typeof j.version !== "number") return;
   srvVersion = j.version;
+  if(Array.isArray(j.admins)) adminNames = j.admins;
   if(j.settings && Array.isArray(j.settings.staff) && j.settings.staff.length)
     state.settings = {staff: j.settings.staff};
   state.requests = j.requests || {};
   renderAll();
 }
 async function callServer(path, opts, q){
-  const res = await fetch(apiUrl(path, q), Object.assign({cache:"no-store"}, opts));
-  if(!res.ok) throw new Error("HTTP "+res.status);
+  const o = Object.assign({cache:"no-store"}, opts || {});
+  o.headers = Object.assign({}, o.headers || {});
+  if(state.me.token) o.headers["X-Auth"] = state.me.token;
+  const res = await fetch(apiUrl(path, q), o);
+  if(!res.ok){
+    let msg = "通信に失敗しました（" + res.status + "）";
+    try{ const j = await res.json(); if(j && j.error) msg = j.error; }catch(e){}
+    const err = new Error(msg); err.status = res.status; throw err;
+  }
   return await res.json();
+}
+
+/* 管理者の認証が切れていたら役割を戻して知らせる */
+function handleAuthError(e){
+  if(!e || e.status !== 401) return false;
+  const wasManager = state.me.role === "manager";
+  if(wasManager){
+    state.me.role = "requester"; state.me.token = "";
+    saveMe(); renderAll();
+  }
+  alert(e.message + (wasManager ? "\n\n（役割を「依頼者」に戻しました）" : ""));
+  return true;
+}
+/* 書き込みに失敗したら、サーバーの内容で画面を戻す */
+async function resync(){
+  try{ applyServer(await callServer("state", {})); }catch(e){}
 }
 function startPoll(){
   if(pollTimer) clearInterval(pollTimer);
@@ -641,8 +679,8 @@ async function initStore(){
   }, ()=>{ setConn("local","この端末のみに保存"); });
 }
 
-function saveFailed(){
-  alert("保存できませんでした。\n通信状況を確認して、もう一度お試しください。");
+function saveFailed(e){
+  alert((e && e.message) ? e.message : "保存できませんでした。通信状況を確認して、もう一度お試しください。");
 }
 
 async function persistSettings(){
@@ -654,7 +692,7 @@ async function persistSettings(){
         body: JSON.stringify({staff: state.settings.staff})
       }));
       return true;
-    }catch(e){ return false; }
+    }catch(e){ if(!handleAuthError(e)) saveFailed(e); return false; }
     finally{ pollPaused = false; }
   }
   if(db){ try{ await db.doc("config/settings").set({staff: state.settings.staff}); return true; }
@@ -669,10 +707,10 @@ async function persistRequest(r){
       applyServer(await callServer("request", {
         method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(r)
       }));
-    }catch(e){ saveFailed(); }
+    }catch(e){ if(!handleAuthError(e)) saveFailed(e); await resync(); }
     return;
   }
-  if(db){ try{ await db.collection("requests").doc(r.id).set(r); }catch(e){ saveFailed(); } }
+  if(db){ try{ await db.collection("requests").doc(r.id).set(r); }catch(e){ saveFailed(e); } }
   else saveLocal();
   renderAll();
 }
@@ -681,7 +719,7 @@ async function removeRequest(id){
   delete state.requests[id]; renderAll();
   if(mode==="server"){
     try{ applyServer(await callServer("request", {method:"DELETE"}, "id="+encodeURIComponent(id))); }
-    catch(e){ saveFailed(); }
+    catch(e){ if(!handleAuthError(e)) saveFailed(e); await resync(); }
     return;
   }
   if(db){ try{ await db.collection("requests").doc(id).delete(); }catch(e){} }
@@ -865,7 +903,7 @@ function actionButtons(r){
   if(r.status==="pending" && !isManager()) h += '<span class="tag" style="color:var(--ink-3)">管理者の承認待ちです</span>';
   if(r.status==="approved") h += '<button class="btn sm primary" data-act="done|'+r.id+'">完了にする</button>';
   if(r.status==="rejected") h += '<button class="btn sm" data-act="reopen|'+r.id+'">再申請する</button>';
-  if(r.status==="done")     h += '<button class="btn sm" data-act="reopen|'+r.id+'">承認済みに戻す</button>';
+  if(r.status==="done" && isManager()) h += '<button class="btn sm" data-act="reopen|'+r.id+'">承認済みに戻す</button>';
   return h;
 }
 
@@ -888,6 +926,12 @@ function renderConfig(){
     '</div>').join("");
   document.getElementById("typeLegend").innerHTML = JOB_TYPES
     .map(t=>'<span class="tag" style="--jc:'+t.color+'"><span class="sw"></span>'+t.label+'</span>').join("");
+
+  const can = isManager();
+  document.getElementById("cfgNote").hidden = can;
+  document.getElementById("addStaff").disabled = !can;
+  document.getElementById("saveStaff").disabled = !can;
+  el.querySelectorAll("input,select,button").forEach(n=>{ n.disabled = !can; });
 }
 
 /* ---------- form ---------- */
@@ -995,7 +1039,7 @@ function openDetail(id){
   document.getElementById("detailActions").innerHTML =
     actionButtons(r) +
     '<button class="btn sm" data-act="edit|'+r.id+'">編集</button>' +
-    '<button class="btn sm ghost" data-act="delete|'+r.id+'">削除</button>';
+    (isManager() ? '<button class="btn sm ghost" data-act="delete|'+r.id+'">削除</button>' : '');
   document.getElementById("detailScrim").hidden = false;
 }
 
@@ -1109,15 +1153,59 @@ document.getElementById("formSave").addEventListener("click", saveForm);
 
 document.getElementById("detailClose").addEventListener("click", ()=>{ document.getElementById("detailScrim").hidden = true; });
 
+function syncMeForm(){
+  const isMgr = document.getElementById("me-role").value === "manager";
+  const needsPw = isMgr && mode === "server";
+  document.getElementById("me-pwField").hidden = !needsPw;
+  document.getElementById("me-adminHint").textContent = adminNames.length
+    ? "管理者として登録されているのは " + adminNames.join("・") + " です。名前欄にはこのいずれかを入力してください。"
+    : "";
+  if(isMgr && !needsPw)
+    showMeError("このアプリは社内サーバーに接続していないため、管理者のパスワード確認は行われません。");
+  else
+    document.getElementById("me-err").hidden = true;
+}
+function showMeError(msg){
+  const el = document.getElementById("me-err");
+  el.textContent = msg; el.hidden = false;
+}
 document.getElementById("meBtn").addEventListener("click", ()=>{
   document.getElementById("me-name").value = state.me.name;
   document.getElementById("me-role").value = state.me.role;
+  document.getElementById("me-pw").value = "";
+  document.getElementById("me-err").hidden = true;
+  syncMeForm();
   document.getElementById("meScrim").hidden = false;
   document.getElementById("me-name").focus();
 });
+document.getElementById("me-role").addEventListener("change", syncMeForm);
 document.getElementById("meCancel").addEventListener("click", ()=>{ document.getElementById("meScrim").hidden = true; });
-document.getElementById("meSave").addEventListener("click", ()=>{
-  state.me = {name: document.getElementById("me-name").value.trim(), role: document.getElementById("me-role").value};
+document.getElementById("meSave").addEventListener("click", async ()=>{
+  const name = document.getElementById("me-name").value.trim();
+  const role = document.getElementById("me-role").value;
+
+  if(role === "manager" && mode === "server"){
+    const pw = document.getElementById("me-pw").value;
+    if(!name){ showMeError("名前を入力してください。"); return; }
+    if(!pw){ showMeError("管理者パスワードを入力してください。"); return; }
+    const btn = document.getElementById("meSave");
+    btn.disabled = true; btn.textContent = "確認中…";
+    try{
+      const r = await callServer("login", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({name: name, password: pw})
+      });
+      state.me = {name: r.name || name, role: "manager", token: r.token};
+    }catch(e){
+      showMeError(e.message || "ログインできませんでした。");
+      return;
+    }finally{
+      btn.disabled = false; btn.textContent = "保存";
+    }
+  }else{
+    state.me = {name: name, role: role, token: ""};
+  }
+
   saveMe();
   document.getElementById("meScrim").hidden = true;
   renderAll();
