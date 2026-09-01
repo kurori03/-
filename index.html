@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>車両入出庫管理ツール</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --line:#dfe4ec; --line-soft:#eef1f6;
+  --ink:#1b2430; --ink-2:#5a6675; --ink-3:#8a94a3;
+  --accent:#1f5fbf; --accent-soft:#e8f0fc;
+  --ok:#15803d; --ok-soft:#e6f4ea;
+  --warn:#b45309; --warn-soft:#fdf3e3;
+  --danger:#b42318; --danger-soft:#fdeceb;
+  --radius:8px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--font); background:var(--bg); color:var(--ink); font-size:14px; line-height:1.6;}
+h1,h2,h3{margin:0; font-weight:600; letter-spacing:.01em}
+button{font-family:inherit; font-size:inherit; cursor:pointer}
+input,select,textarea{font-family:inherit; font-size:inherit; color:var(--ink)}
+
+/* ---------- layout ---------- */
+.app{max-width:1400px; margin:0 auto; padding:0 20px 80px}
+header.top{
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  padding:16px 0 12px; border-bottom:1px solid var(--line); margin-bottom:0;
+}
+header.top h1{font-size:17px}
+header.top .sub{color:var(--ink-3); font-size:12px}
+header.top .spacer{flex:1}
+nav.tabs{display:flex; gap:4px; flex-wrap:wrap; padding:10px 0 0; border-bottom:1px solid var(--line); margin-bottom:20px}
+nav.tabs button{
+  background:none; border:0; border-bottom:2px solid transparent; padding:8px 14px;
+  color:var(--ink-2); font-weight:500; border-radius:6px 6px 0 0;
+}
+nav.tabs button:hover{background:var(--line-soft); color:var(--ink)}
+nav.tabs button.active{color:var(--accent); border-bottom-color:var(--accent); background:none}
+.view{display:none}
+.view.active{display:block}
+
+/* ---------- generic ---------- */
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px}
+.panel > h2{font-size:14px; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--line-soft)}
+.panel .hint{color:var(--ink-3); font-size:12px; margin:-8px 0 12px}
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
+.grow{flex:1; min-width:140px}
+.btn{
+  background:var(--panel); border:1px solid var(--line); border-radius:6px;
+  padding:7px 14px; color:var(--ink); font-weight:500; white-space:nowrap;
+}
+.btn:hover{background:var(--line-soft)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--danger); border-color:#f0c7c3}
+.btn.danger:hover{background:var(--danger-soft)}
+.btn.sm{padding:4px 9px; font-size:12px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+label.f{display:block; font-size:12px; color:var(--ink-2); margin-bottom:4px; font-weight:500}
+input[type=text],input[type=date],input[type=number],input[type=search],select,textarea{
+  width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:#fff;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft); border-color:var(--accent)}
+textarea{resize:vertical; min-height:60px}
+.field{min-width:150px}
+.muted{color:var(--ink-3)}
+.empty{padding:40px; text-align:center; color:var(--ink-3)}
+
+/* ---------- table ---------- */
+.table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:#fff}
+table{border-collapse:collapse; width:100%; font-size:13px}
+th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--line-soft); white-space:nowrap}
+th{background:#f8fafc; color:var(--ink-2); font-weight:600; font-size:12px; position:sticky; top:0; z-index:1}
+tbody tr:hover{background:#f9fbfd}
+tbody tr.sel{background:var(--accent-soft)}
+td.num{text-align:right; font-variant-numeric:tabular-nums}
+.cell-actions{display:flex; gap:4px}
+
+/* ---------- badges ---------- */
+.badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; border:1px solid transparent}
+.badge.g{background:var(--ok-soft); color:var(--ok)}
+.badge.y{background:var(--warn-soft); color:var(--warn)}
+.badge.r{background:var(--danger-soft); color:var(--danger)}
+.badge.b{background:var(--accent-soft); color:var(--accent)}
+.badge.n{background:#eef1f6; color:var(--ink-2)}
+
+/* ---------- dashboard ---------- */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px}
+.stat{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px}
+.stat .k{font-size:12px; color:var(--ink-2)}
+.stat .v{font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.3}
+.stat .u{font-size:12px; color:var(--ink-3); font-weight:400; margin-left:2px}
+.stat.alert .v{color:var(--danger)}
+.bars{display:flex; flex-direction:column; gap:8px}
+.bar-row{display:grid; grid-template-columns:130px 1fr 48px; gap:10px; align-items:center; font-size:13px}
+.bar-track{background:var(--line-soft); border-radius:4px; height:16px; overflow:hidden}
+.bar-fill{height:100%; background:var(--accent); border-radius:4px}
+.bar-row .n{text-align:right; font-variant-numeric:tabular-nums; color:var(--ink-2)}
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+@media (max-width:900px){ .two-col{grid-template-columns:1fr} }
+
+/* ---------- modal ---------- */
+.modal-bg{
+  position:fixed; inset:0; background:rgba(16,24,36,.5); display:none;
+  align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; z-index:50;
+}
+.modal-bg.open{display:flex}
+.modal{background:#fff; border-radius:10px; width:100%; max-width:760px; padding:22px}
+.modal h3{font-size:15px; margin-bottom:16px}
+.form-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px}
+.form-grid .full{grid-column:1/-1}
+.modal-foot{display:flex; gap:8px; justify-content:flex-end; margin-top:20px; padding-top:16px; border-top:1px solid var(--line-soft)}
+
+/* ---------- toast ---------- */
+#toast{
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:#1b2430; color:#fff; padding:10px 20px; border-radius:8px; z-index:100;
+  opacity:0; pointer-events:none; transition:opacity .2s; font-size:13px;
+}
+#toast.show{opacity:1}
+
+/* ---------- mapping ---------- */
+.map-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px}
+.map-item{border:1px solid var(--line); border-radius:6px; padding:10px}
+.map-item .lbl{font-size:12px; font-weight:600; margin-bottom:5px}
+.map-item .lbl .req{color:var(--danger); margin-left:3px}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{background:#eef1f6; border-radius:6px; padding:4px 10px; font-size:12px; display:flex; align-items:center; gap:6px}
+.chip button{border:0; background:none; color:var(--ink-3); padding:0 2px; font-size:14px; line-height:1}
+.chip button:hover{color:var(--danger)}
+
+/* ---------- print ---------- */
+#print-area{display:none}
+.doc{
+  width:190mm; min-height:270mm; padding:12mm; margin:0 auto 10mm; background:#fff;
+  color:#000; font-size:11pt; page-break-after:always;
+}
+.doc:last-child{page-break-after:auto}
+.doc h2.title{text-align:center; font-size:18pt; letter-spacing:.4em; margin-bottom:8mm; font-weight:700}
+.doc .meta{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6mm}
+.doc .to{font-size:13pt; border-bottom:1px solid #000; padding-bottom:2px; min-width:70mm}
+.doc .from{font-size:10pt; text-align:left; line-height:1.7}
+.doc table{width:100%; border-collapse:collapse; font-size:10pt; margin-bottom:5mm}
+.doc th,.doc td{border:1px solid #000; padding:1.8mm 1.5mm; white-space:normal; background:none;
+  position:static; word-break:break-word; vertical-align:top}
+.doc th{background:#eee; text-align:center; font-weight:600; font-size:8.5pt; vertical-align:middle}
+.doc table{font-size:9pt}
+.doc thead{display:table-header-group}
+.doc tbody tr{page-break-inside:avoid}
+.doc .lead{margin-bottom:5mm; line-height:1.9}
+.doc .sign{display:flex; gap:0; margin-top:8mm; justify-content:flex-end}
+.doc .sign .box{border:1px solid #000; width:24mm; height:24mm; text-align:center; font-size:8pt; padding-top:1mm}
+.doc .note-box{border:1px solid #000; padding:3mm; min-height:22mm; font-size:10pt}
+.doc .kv{display:grid; grid-template-columns:26mm 1fr 26mm 1fr; border:1px solid #000; border-bottom:0; font-size:9.5pt}
+.doc .kv > div{border-bottom:1px solid #000; border-right:1px solid #000; padding:1.8mm 2mm; word-break:break-word}
+.doc .kv > div:nth-child(4n+1), .doc .kv > div:nth-child(4n+3){background:#f0f0f0; font-weight:600}
+.doc .kv > div:nth-child(4n){border-right:0}
+.doc-preview{background:#e9edf2; padding:20px; border-radius:var(--radius); overflow-x:auto}
+.doc-preview .doc{box-shadow:0 1px 6px rgba(0,0,0,.18)}
+
+@media print{
+  @page{size:A4; margin:0}
+  body{background:#fff}
+  body > *{display:none !important}
+  #print-area{display:block !important}
+  #print-area .doc{box-shadow:none; margin:0 auto; width:210mm; padding:10mm 12mm}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <h1>車両入出庫管理ツール</h1>
+  <span class="sub" id="hdr-count">－</span>
+  <span class="spacer"></span>
+  <span class="sub" id="hdr-saved">保存先：このブラウザ内</span>
+</header>
+
+<nav class="tabs">
+  <button data-view="dash" class="active">ダッシュボード</button>
+  <button data-view="list">車両一覧</button>
+  <button data-view="import">CSV取込</button>
+  <button data-view="history">入出庫履歴</button>
+  <button data-view="docs">帳票作成</button>
+  <button data-view="settings">設定</button>
+</nav>
+
+<!-- ============ ダッシュボード ============ -->
+<section class="view active" id="view-dash">
+  <div class="stats" id="dash-stats"></div>
+  <div class="two-col">
+    <div class="panel">
+      <h2>拠点別 在庫台数</h2>
+      <div class="bars" id="dash-by-loc"></div>
+    </div>
+    <div class="panel">
+      <h2>ステータス別 台数</h2>
+      <div class="bars" id="dash-by-status"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>納車予定 直近30日</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>納車予定日</th><th>残日数</th><th>注文書番号</th><th>車種</th><th>顧客名</th><th>拠点</th><th>ステータス</th></tr></thead>
+      <tbody id="dash-upcoming"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ 車両一覧 ============ -->
+<section class="view" id="view-list">
+  <div class="panel">
+    <div class="row">
+      <div class="grow"><label class="f">フリーワード検索</label>
+        <input type="search" id="f-q" placeholder="注文書番号 / 車台番号 / 車種 / 顧客名 / 備考 …"></div>
+      <div class="field"><label class="f">拠点</label><select id="f-loc"></select></div>
+      <div class="field"><label class="f">ステータス</label><select id="f-status"></select></div>
+      <div class="field"><label class="f">納車予定日 From</label><input type="date" id="f-from"></div>
+      <div class="field"><label class="f">納車予定日 To</label><input type="date" id="f-to"></div>
+      <button class="btn" id="f-clear">条件クリア</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn primary" id="btn-new">＋ 車両を追加</button>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted" id="sel-count" style="align-self:center">0 台選択中</span>
+      <button class="btn" id="bulk-move" disabled>一括で拠点移動</button>
+      <button class="btn" id="bulk-status" disabled>一括ステータス変更</button>
+      <button class="btn" id="bulk-req" disabled>納車依頼書を作成</button>
+      <button class="btn" id="bulk-slip" disabled>車両伝票を作成</button>
+      <button class="btn" id="btn-export" >CSV出力</button>
+      <button class="btn danger" id="bulk-del" disabled>削除</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th style="width:34px"><input type="checkbox" id="chk-all"></th>
+        <th data-sort="orderNo">注文書番号</th>
+        <th data-sort="model">車種 / グレード</th>
+        <th data-sort="color">色</th>
+        <th data-sort="chassisNo">車台番号</th>
+        <th data-sort="customer">顧客名</th>
+        <th data-sort="location">拠点</th>
+        <th data-sort="status">ステータス</th>
+        <th data-sort="arrivedAt">入庫日</th>
+        <th data-sort="deliveryDate">納車予定日</th>
+        <th data-sort="salesRep">担当</th>
+        <th>操作</th>
+      </tr></thead>
+      <tbody id="list-body"></tbody>
+    </table></div>
+    <div class="muted" id="list-summary" style="margin-top:10px; font-size:12px"></div>
+  </div>
+</section>
+
+<!-- ============ CSV取込 ============ -->
+<section class="view" id="view-import">
+  <div class="panel">
+    <h2>手順1　CSVファイルを選択</h2>
+    <p class="hint">基幹システムから出力したCSVを選んでください。文字コード（UTF-8 / Shift_JIS）は自動判別します。</p>
+    <div class="row">
+      <input type="file" id="csv-file" accept=".csv,.txt" style="border:1px solid var(--line); padding:6px; border-radius:6px; background:#fff">
+      <button class="btn" id="csv-reset">クリア</button>
+    </div>
+    <div id="csv-info" class="muted" style="margin-top:10px"></div>
+  </div>
+
+  <div class="panel" id="map-panel" style="display:none">
+    <h2>手順2　列の対応づけ</h2>
+    <p class="hint">CSVのどの列をどの項目として取り込むかを指定します。設定は保存され、次回以降は自動で復元されます。</p>
+    <div class="map-grid" id="map-grid"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="map-auto">列名から自動対応づけ</button>
+      <button class="btn" id="map-clear">対応づけをリセット</button>
+    </div>
+  </div>
+
+  <div class="panel" id="imp-panel" style="display:none">
+    <h2>手順3　取り込み方法とプレビュー</h2>
+    <div class="row" style="margin-bottom:12px">
+      <label style="display:flex; align-items:center; gap:6px"><input type="checkbox" id="opt-keep-loc" checked> 拠点・ステータスは既存の値を優先する（画面での更新を上書きしない）</label>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <label style="display:flex; align-items:center; gap:6px"><input type="checkbox" id="opt-skip-empty" checked> CSVの空欄では既存の値を上書きしない</label>
+    </div>
+    <div id="imp-summary"></div>
+    <div class="table-wrap" style="margin-top:12px; max-height:420px; overflow-y:auto"><table>
+      <thead><tr id="prev-head"></tr></thead>
+      <tbody id="prev-body"></tbody>
+    </table></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" id="btn-import">この内容で取り込む</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 履歴 ============ -->
+<section class="view" id="view-history">
+  <div class="panel">
+    <div class="row">
+      <div class="grow"><label class="f">フリーワード検索</label><input type="search" id="h-q" placeholder="注文書番号 / 車種 / 担当者 / 備考 …"></div>
+      <div class="field"><label class="f">種別</label><select id="h-type">
+        <option value="">すべて</option><option value="入庫">入庫</option><option value="出庫">出庫</option>
+        <option value="移動">移動</option><option value="ステータス変更">ステータス変更</option>
+        <option value="登録">登録</option><option value="CSV取込">CSV取込</option><option value="削除">削除</option>
+      </select></div>
+      <div class="field"><label class="f">日付 From</label><input type="date" id="h-from"></div>
+      <div class="field"><label class="f">日付 To</label><input type="date" id="h-to"></div>
+      <button class="btn" id="h-clear">条件クリア</button>
+      <button class="btn" id="h-export">CSV出力</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="table-wrap"><table>
+      <thead><tr><th>日時</th><th>種別</th><th>注文書番号</th><th>車種</th><th>変更前</th><th>変更後</th><th>担当者</th><th>備考</th></tr></thead>
+      <tbody id="hist-body"></tbody>
+    </table></div>
+    <div class="muted" id="hist-summary" style="margin-top:10px; font-size:12px"></div>
+  </div>
+</section>
+
+<!-- ============ 帳票 ============ -->
+<section class="view" id="view-docs">
+  <div class="panel">
+    <h2>帳票の作成</h2>
+    <p class="hint">※ 指定フォーマットを共有いただくまでの暫定レイアウトです。A4縦・1ページに収まるよう調整しています。</p>
+    <div class="row">
+      <div class="field"><label class="f">帳票の種類</label><select id="doc-type">
+        <option value="request">納車依頼書（外部業者向け・複数台まとめて1枚）</option>
+        <option value="slip">車両伝票（積載用・1台1枚）</option>
+      </select></div>
+      <div class="field" id="wrap-vendor"><label class="f">依頼先業者</label><select id="doc-vendor"></select></div>
+      <div class="field"><label class="f">発行日</label><input type="date" id="doc-date"></div>
+      <div class="field" id="wrap-due"><label class="f">希望納車日</label><input type="date" id="doc-due"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="grow"><label class="f">連絡事項・特記事項</label><textarea id="doc-note" placeholder="例）当日9時までにご連絡ください。鍵は受付でお預かりしています。"></textarea></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>対象車両の選択</h2>
+    <div class="row" style="margin-bottom:10px">
+      <div class="grow"><input type="search" id="doc-q" placeholder="絞り込み（注文書番号 / 車種 / 顧客名）"></div>
+      <button class="btn sm" id="doc-all">表示中をすべて選択</button>
+      <button class="btn sm" id="doc-none">選択解除</button>
+    </div>
+    <div class="table-wrap" style="max-height:320px; overflow-y:auto"><table>
+      <thead><tr><th style="width:34px"></th><th>注文書番号</th><th>車種 / グレード</th><th>色</th><th>車台番号</th><th>顧客名</th><th>拠点</th><th>納車予定日</th></tr></thead>
+      <tbody id="doc-body"></tbody>
+    </table></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" id="doc-build">プレビューを作成</button>
+      <button class="btn" id="doc-print" disabled>印刷 / PDF保存</button>
+      <span class="muted" id="doc-count" style="align-self:center"></span>
+    </div>
+  </div>
+
+  <div class="panel" id="doc-preview-panel" style="display:none">
+    <h2>プレビュー</h2>
+    <div class="doc-preview" id="doc-preview"></div>
+  </div>
+</section>
+
+<!-- ============ 設定 ============ -->
+<section class="view" id="view-settings">
+  <div class="two-col">
+    <div class="panel">
+      <h2>拠点マスタ</h2>
+      <p class="hint">車両の保管場所です。ここで追加した拠点が各画面の選択肢になります。</p>
+      <div class="row" style="margin-bottom:12px">
+        <div class="grow"><input type="text" id="loc-new" placeholder="例）本社ヤード"></div>
+        <button class="btn" id="loc-add">追加</button>
+      </div>
+      <div class="chips" id="loc-chips"></div>
+    </div>
+    <div class="panel">
+      <h2>外部業者マスタ</h2>
+      <p class="hint">納車依頼書の宛先になる陸送業者・協力工場などを登録します。</p>
+      <div class="row" style="margin-bottom:12px">
+        <div class="grow"><input type="text" id="ven-new" placeholder="例）◯◯陸送株式会社"></div>
+        <button class="btn" id="ven-add">追加</button>
+      </div>
+      <div class="chips" id="ven-chips"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>自社情報（帳票に印字されます）</h2>
+    <div class="form-grid">
+      <div><label class="f">会社名・店舗名</label><input type="text" id="s-company"></div>
+      <div><label class="f">部署名</label><input type="text" id="s-dept"></div>
+      <div><label class="f">担当者名</label><input type="text" id="s-person"></div>
+      <div><label class="f">電話番号</label><input type="text" id="s-tel"></div>
+      <div><label class="f">FAX番号</label><input type="text" id="s-fax"></div>
+      <div class="full"><label class="f">住所</label><input type="text" id="s-addr"></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" id="s-save">保存する</button></div>
+  </div>
+
+  <div class="panel">
+    <h2>バックアップ / 復元</h2>
+    <p class="hint">データはこのブラウザ内にのみ保存されます。PCの入れ替えや共有の際は、必ずバックアップファイルを書き出してください。</p>
+    <div class="row">
+      <button class="btn" id="bk-export">バックアップを書き出す（JSON）</button>
+      <label class="btn" style="display:inline-block">バックアップを読み込む
+        <input type="file" id="bk-import" accept=".json" style="display:none"></label>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn danger" id="bk-clear">全データを削除</button>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ============ modals ============ -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" id="modal"></div>
+</div>
+<div id="toast"></div>
+<div id="print-area"></div>
+<script>
+'use strict';
+
+/* =========================================================
+   定数
+   ========================================================= */
+const STORE_KEY = 'vehicle_inout_v1';
+
+const STATUSES = ['受注済（未入庫）','入庫済','整備中','納車準備完了','陸送中','納車済'];
+const STATUS_CLASS = {
+  '受注済（未入庫）':'n', '入庫済':'b', '整備中':'y',
+  '納車準備完了':'g', '陸送中':'y', '納車済':'n'
+};
+const ACTIVE_STATUSES = STATUSES.filter(s => s !== '納車済');
+
+/* 車両項目の定義（CSV列マッピングもこの定義を使う） */
+const FIELDS = [
+  { key:'orderNo',      label:'注文書番号', required:true,
+    aliases:['注文書番号','注文番号','受注番号','注番','オーダー番号','order','orderno'] },
+  { key:'chassisNo',    label:'車台番号', aliases:['車台番号','車体番号','車台No','frameno','vin'] },
+  { key:'regNo',        label:'登録番号', aliases:['登録番号','ナンバー','車両番号','regno'] },
+  { key:'model',        label:'車種', aliases:['車種','車種名','モデル','車名','model'] },
+  { key:'grade',        label:'グレード', aliases:['グレード','タイプ','型式','grade'] },
+  { key:'color',        label:'色', aliases:['色','カラー','外装色','ボディカラー','color'] },
+  { key:'customer',     label:'顧客名', aliases:['顧客名','お客様名','客先名','納車先','購入者','customer'] },
+  { key:'customerAddr', label:'顧客住所', aliases:['顧客住所','納車先住所','住所','納品先住所','address'] },
+  { key:'customerTel',  label:'顧客電話番号', aliases:['顧客電話番号','電話番号','tel','連絡先'] },
+  { key:'salesRep',     label:'営業担当', aliases:['営業担当','担当者','担当','セールス','staff'] },
+  { key:'dealer',       label:'店舗・販売店', aliases:['店舗','販売店','支店','拠点名','店名','dealer'] },
+  { key:'orderDate',    label:'受注日', type:'date', aliases:['受注日','契約日','注文日','orderdate'] },
+  { key:'arrivedAt',    label:'入庫日', type:'date', aliases:['入庫日','入荷日','到着日','arrival'] },
+  { key:'deliveryDate', label:'納車予定日', type:'date',
+    aliases:['納車予定日','納車日','納期','引渡予定日','delivery','deliverydate'] },
+  { key:'location',     label:'拠点（保管場所）', aliases:['拠点','保管場所','所在','置場','ヤード','location'] },
+  { key:'status',       label:'ステータス', aliases:['ステータス','状態','進捗','status'] },
+  { key:'vendor',       label:'納車依頼先業者', aliases:['業者','陸送業者','依頼先','納車業者','vendor'] },
+  { key:'memo',         label:'備考', aliases:['備考','メモ','特記事項','コメント','note','remarks'] },
+];
+const FIELD_MAP = Object.fromEntries(FIELDS.map(f => [f.key, f]));
+
+const DEFAULT_STATE = () => ({
+  vehicles: [],
+  history: [],
+  locations: ['本社ヤード','第2ヤード','整備工場','外部ヤード','陸送中'],
+  vendors: ['未設定'],
+  mapping: {},
+  settings: { company:'', dept:'', person:'', tel:'', fax:'', addr:'' },
+  seq: 1,
+});
+
+/* =========================================================
+   ユーティリティ
+   ========================================================= */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+function esc(v){
+  return String(v ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2400);
+}
+function todayStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function nowStamp(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+/* 「2026/4/1」「2026.4.1」「20260401」などを YYYY-MM-DD へ寄せる */
+function normDate(v){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  let m = s.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return s;
+}
+function daysUntil(dateStr){
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return null;
+  const t = new Date(todayStr() + 'T00:00:00');
+  return Math.round((d - t) / 86400000);
+}
+function download(filename, content, mime){
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime || 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* =========================================================
+   永続化
+   ========================================================= */
+let state = DEFAULT_STATE();
+
+function load(){
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) state = Object.assign(DEFAULT_STATE(), JSON.parse(raw));
+  } catch (e) {
+    console.error(e);
+    toast('保存データの読み込みに失敗しました。初期状態で起動します。');
+  }
+}
+function save(){
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error(e);
+    toast('保存に失敗しました（保存容量の上限の可能性があります）');
+  }
+}
+function nextId(){ return 'V' + String(state.seq++).padStart(6,'0'); }
+
+function addHistory(entry){
+  state.history.unshift(Object.assign({
+    id: 'H' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    ts: nowStamp(), type:'', orderNo:'', model:'', before:'', after:'', operator:'', note:''
+  }, entry));
+  if (state.history.length > 20000) state.history.length = 20000;
+}
+
+/* =========================================================
+   CSV 読み書き
+   ========================================================= */
+/* RFC4180準拠のパーサ（改行・カンマ入りの引用フィールドに対応） */
+function parseCSV(text){
+  text = text.replace(/^﻿/, '');
+  const rows = []; let row = []; let cur = ''; let quoted = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (quoted){
+      if (c === '"'){
+        if (text[i+1] === '"'){ cur += '"'; i++; }
+        else quoted = false;
+      } else cur += c;
+    } else {
+      if (c === '"') quoted = true;
+      else if (c === ','){ row.push(cur); cur = ''; }
+      else if (c === '\r'){ /* skip */ }
+      else if (c === '\n'){ row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += c;
+    }
+  }
+  if (cur !== '' || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim() !== ''));
+}
+
+/* UTF-8で読めなければ Shift_JIS として読み直す */
+async function readCSVFile(file){
+  const buf = await file.arrayBuffer();
+  let text, encoding = 'UTF-8';
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch (e) {
+    try {
+      text = new TextDecoder('shift_jis').decode(buf);
+      encoding = 'Shift_JIS';
+    } catch (e2) {
+      text = new TextDecoder('utf-8').decode(buf);
+      encoding = 'UTF-8（一部文字化けの可能性あり）';
+    }
+  }
+  return { text, encoding };
+}
+
+function toCSV(headers, rows){
+  const q = v => {
+    const s = String(v ?? '');
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  return '﻿' + [headers.map(q).join(',')]
+    .concat(rows.map(r => r.map(q).join(',')))
+    .join('\r\n');
+}
+
+/* =========================================================
+   共通描画ヘルパ
+   ========================================================= */
+function fillSelect(el, values, opts){
+  opts = opts || {};
+  const cur = opts.value ?? el.value;
+  el.innerHTML = (opts.blank ? `<option value="">${esc(opts.blank)}</option>` : '')
+    + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (values.includes(cur) || cur === '') el.value = cur;
+}
+function statusBadge(s){
+  return `<span class="badge ${STATUS_CLASS[s] || 'n'}">${esc(s || '－')}</span>`;
+}
+function refreshSelects(){
+  fillSelect($('#f-loc'), state.locations, { blank:'すべて' });
+  fillSelect($('#f-status'), STATUSES, { blank:'すべて' });
+  fillSelect($('#doc-vendor'), state.vendors, { blank:'（未選択）' });
+}
+
+function renderAll(){
+  refreshSelects();
+  renderDash();
+  renderList();
+  renderHistory();
+  renderDocList();
+  renderMasters();
+  $('#hdr-count').textContent =
+    `登録 ${state.vehicles.length} 台（納車前 ${state.vehicles.filter(v => v.status !== '納車済').length} 台）`;
+}
+
+/* =========================================================
+   ダッシュボード
+   ========================================================= */
+function renderDash(){
+  const vs = state.vehicles;
+  const active = vs.filter(v => v.status !== '納車済');
+  const notArrived = vs.filter(v => v.status === '受注済（未入庫）');
+  const ready = vs.filter(v => v.status === '納車準備完了');
+  const late = active.filter(v => { const d = daysUntil(v.deliveryDate); return d !== null && d < 0; });
+  const week = active.filter(v => { const d = daysUntil(v.deliveryDate); return d !== null && d >= 0 && d <= 7; });
+  const noDate = active.filter(v => !v.deliveryDate);
+
+  const stats = [
+    ['納車前の総台数', active.length, '台', false],
+    ['未入庫', notArrived.length, '台', false],
+    ['納車準備完了', ready.length, '台', false],
+    ['7日以内に納車', week.length, '台', false],
+    ['納車予定日 超過', late.length, '台', late.length > 0],
+    ['納車予定日 未設定', noDate.length, '台', false],
+  ];
+  $('#dash-stats').innerHTML = stats.map(([k,v,u,alert]) =>
+    `<div class="stat${alert ? ' alert' : ''}"><div class="k">${esc(k)}</div>
+     <div class="v">${v}<span class="u">${u}</span></div></div>`).join('');
+
+  const bars = (el, counts) => {
+    const max = Math.max(1, ...Object.values(counts));
+    const rows = Object.entries(counts).filter(([,n]) => n > 0);
+    el.innerHTML = rows.length ? rows.map(([k,n]) =>
+      `<div class="bar-row"><div>${esc(k)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(n/max*100).toFixed(1)}%"></div></div>
+        <div class="n">${n}</div></div>`).join('')
+      : '<div class="empty">該当する車両がありません</div>';
+  };
+  const byLoc = {};
+  state.locations.forEach(l => byLoc[l] = 0);
+  active.forEach(v => { const k = v.location || '（未設定）'; byLoc[k] = (byLoc[k] || 0) + 1; });
+  bars($('#dash-by-loc'), byLoc);
+
+  const byStatus = {};
+  ACTIVE_STATUSES.forEach(s => byStatus[s] = 0);
+  active.forEach(v => { const k = v.status || '（未設定）'; byStatus[k] = (byStatus[k] || 0) + 1; });
+  bars($('#dash-by-status'), byStatus);
+
+  const upcoming = active
+    .filter(v => { const d = daysUntil(v.deliveryDate); return d !== null && d <= 30; })
+    .sort((a,b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || ''));
+  $('#dash-upcoming').innerHTML = upcoming.length ? upcoming.map(v => {
+    const d = daysUntil(v.deliveryDate);
+    const cls = d < 0 ? 'r' : d <= 3 ? 'y' : 'n';
+    const txt = d < 0 ? `${-d}日超過` : d === 0 ? '本日' : `あと${d}日`;
+    return `<tr><td>${esc(v.deliveryDate)}</td><td><span class="badge ${cls}">${txt}</span></td>
+      <td>${esc(v.orderNo)}</td><td>${esc(v.model)}</td><td>${esc(v.customer)}</td>
+      <td>${esc(v.location || '－')}</td><td>${statusBadge(v.status)}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">直近30日の納車予定はありません</td></tr>';
+}
+
+/* =========================================================
+   車両一覧
+   ========================================================= */
+let selected = new Set();
+let sortKey = 'deliveryDate', sortAsc = true;
+
+function filteredVehicles(){
+  const q = $('#f-q').value.trim().toLowerCase();
+  const loc = $('#f-loc').value, st = $('#f-status').value;
+  const from = $('#f-from').value, to = $('#f-to').value;
+  return state.vehicles.filter(v => {
+    if (loc && v.location !== loc) return false;
+    if (st && v.status !== st) return false;
+    if (from && (!v.deliveryDate || v.deliveryDate < from)) return false;
+    if (to && (!v.deliveryDate || v.deliveryDate > to)) return false;
+    if (q){
+      const hay = [v.orderNo,v.chassisNo,v.regNo,v.model,v.grade,v.color,v.customer,
+                   v.salesRep,v.dealer,v.vendor,v.memo].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a,b) => {
+    const x = String(a[sortKey] ?? ''), y = String(b[sortKey] ?? '');
+    if (x === y) return String(a.orderNo).localeCompare(String(b.orderNo));
+    if (x === '') return 1;
+    if (y === '') return -1;
+    return sortAsc ? x.localeCompare(y, 'ja') : y.localeCompare(x, 'ja');
+  });
+}
+
+function renderList(){
+  const rows = filteredVehicles();
+  $('#list-body').innerHTML = rows.length ? rows.map(v => {
+    const d = daysUntil(v.deliveryDate);
+    const late = d !== null && d < 0 && v.status !== '納車済';
+    return `<tr data-id="${v.id}" class="${selected.has(v.id) ? 'sel' : ''}">
+      <td><input type="checkbox" class="row-chk" data-id="${v.id}" ${selected.has(v.id) ? 'checked' : ''}></td>
+      <td>${esc(v.orderNo)}</td>
+      <td>${esc(v.model)}${v.grade ? ' <span class="muted">' + esc(v.grade) + '</span>' : ''}</td>
+      <td>${esc(v.color)}</td>
+      <td>${esc(v.chassisNo)}</td>
+      <td>${esc(v.customer)}</td>
+      <td>${esc(v.location || '－')}</td>
+      <td>${statusBadge(v.status)}</td>
+      <td>${esc(v.arrivedAt || '－')}</td>
+      <td>${v.deliveryDate ? esc(v.deliveryDate) + (late ? ' <span class="badge r">超過</span>' : '') : '<span class="muted">未設定</span>'}</td>
+      <td>${esc(v.salesRep)}</td>
+      <td><div class="cell-actions">
+        <button class="btn sm act-in"   data-id="${v.id}">入庫</button>
+        <button class="btn sm act-move" data-id="${v.id}">移動</button>
+        <button class="btn sm act-out"  data-id="${v.id}">出庫</button>
+        <button class="btn sm act-edit" data-id="${v.id}">編集</button>
+      </div></td></tr>`;
+  }).join('') : '<tr><td colspan="12" class="empty">該当する車両がありません。CSV取込または「＋ 車両を追加」から登録してください。</td></tr>';
+
+  $('#list-summary').textContent = `${rows.length} 件を表示中（全 ${state.vehicles.length} 件）`;
+  updateSelUI();
+}
+
+function updateSelUI(){
+  const n = selected.size;
+  $('#sel-count').textContent = `${n} 台選択中`;
+  ['#bulk-move','#bulk-status','#bulk-req','#bulk-slip','#bulk-del']
+    .forEach(s => $(s).disabled = n === 0);
+  const shown = filteredVehicles();
+  $('#chk-all').checked = shown.length > 0 && shown.every(v => selected.has(v.id));
+}
+
+/* =========================================================
+   モーダル
+   ========================================================= */
+function openModal(html){ $('#modal').innerHTML = html; $('#modal-bg').classList.add('open'); }
+function closeModal(){ $('#modal-bg').classList.remove('open'); $('#modal').innerHTML = ''; }
+$('#modal-bg').addEventListener('click', e => { if (e.target.id === 'modal-bg') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function vehicleForm(v){
+  v = v || {};
+  const input = (f) => {
+    if (f.key === 'location')
+      return `<select id="vf-location">${['', ...state.locations].map(l =>
+        `<option value="${esc(l)}" ${l === (v.location||'') ? 'selected' : ''}>${esc(l || '（未設定）')}</option>`).join('')}</select>`;
+    if (f.key === 'status')
+      return `<select id="vf-status">${STATUSES.map(s =>
+        `<option value="${esc(s)}" ${s === (v.status || STATUSES[0]) ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`;
+    if (f.key === 'vendor')
+      return `<select id="vf-vendor">${['', ...state.vendors].map(s =>
+        `<option value="${esc(s)}" ${s === (v.vendor||'') ? 'selected' : ''}>${esc(s || '（未選択）')}</option>`).join('')}</select>`;
+    if (f.key === 'memo')
+      return `<textarea id="vf-memo">${esc(v.memo || '')}</textarea>`;
+    return `<input type="${f.type === 'date' ? 'date' : 'text'}" id="vf-${f.key}" value="${esc(v[f.key] || '')}">`;
+  };
+  return `<h3>${v.id ? '車両情報の編集' : '車両の新規登録'}</h3>
+    <div class="form-grid">
+      ${FIELDS.map(f => `<div class="${f.key === 'memo' ? 'full' : ''}">
+        <label class="f">${esc(f.label)}${f.required ? ' <span style="color:var(--danger)">*</span>' : ''}</label>
+        ${input(f)}</div>`).join('')}
+    </div>
+    <div class="modal-foot">
+      ${v.id ? '<button class="btn danger" id="vf-del">この車両を削除</button>' : ''}
+      <button class="btn" id="vf-cancel">キャンセル</button>
+      <button class="btn primary" id="vf-save">保存する</button>
+    </div>`;
+}
+
+function editVehicle(id){
+  const v = id ? state.vehicles.find(x => x.id === id) : null;
+  openModal(vehicleForm(v));
+  $('#vf-cancel').onclick = closeModal;
+  if ($('#vf-del')) $('#vf-del').onclick = () => {
+    if (!confirm(`注文書番号「${v.orderNo}」の車両を削除します。よろしいですか？`)) return;
+    addHistory({ type:'削除', orderNo:v.orderNo, model:v.model, before:`${v.location} / ${v.status}` });
+    state.vehicles = state.vehicles.filter(x => x.id !== id);
+    selected.delete(id);
+    save(); renderAll(); closeModal(); toast('削除しました');
+  };
+  $('#vf-save').onclick = () => {
+    const data = {};
+    FIELDS.forEach(f => {
+      const el = $('#vf-' + f.key);
+      data[f.key] = f.type === 'date' ? normDate(el.value) : el.value.trim();
+    });
+    if (!data.orderNo){ toast('注文書番号は必須です'); return; }
+    const dup = state.vehicles.find(x => x.orderNo === data.orderNo && x.id !== id);
+    if (dup && !confirm(`注文書番号「${data.orderNo}」は既に登録されています。別レコードとして保存しますか？`)) return;
+
+    if (v){
+      const before = `${v.location} / ${v.status}`;
+      Object.assign(v, data, { updatedAt: nowStamp() });
+      const after = `${v.location} / ${v.status}`;
+      addHistory({ type: before === after ? '編集' : 'ステータス変更',
+                   orderNo:v.orderNo, model:v.model, before, after });
+    } else {
+      const nv = Object.assign({ id: nextId(), createdAt: nowStamp(), updatedAt: nowStamp() }, data);
+      state.vehicles.push(nv);
+      addHistory({ type:'登録', orderNo:nv.orderNo, model:nv.model, after:`${nv.location} / ${nv.status}` });
+    }
+    save(); renderAll(); closeModal(); toast('保存しました');
+  };
+}
+
+/* 入庫 / 出庫 / 移動 / 一括ステータス変更 の共通モーダル */
+function movementModal(kind, ids){
+  const vs = ids.map(id => state.vehicles.find(v => v.id === id)).filter(Boolean);
+  if (!vs.length) return;
+  const titles = { in:'入庫登録', out:'出庫登録', move:'拠点の移動', status:'ステータスの変更' };
+  const needLoc = kind !== 'status';
+  const defStatus = kind === 'in' ? '入庫済' : kind === 'out' ? '陸送中' : vs[0].status;
+  openModal(`<h3>${titles[kind]}（${vs.length}台）</h3>
+    <div class="muted" style="margin-bottom:14px; max-height:110px; overflow-y:auto">
+      ${vs.map(v => `${esc(v.orderNo)}　${esc(v.model)}　${esc(v.customer)}`).join('<br>')}
+    </div>
+    <div class="form-grid">
+      ${needLoc ? `<div><label class="f">${kind === 'out' ? '出庫先 / 移動先' : '入庫先の拠点'}</label>
+        <select id="mv-loc">${state.locations.map(l =>
+          `<option value="${esc(l)}">${esc(l)}</option>`).join('')}</select></div>` : ''}
+      <div><label class="f">ステータス</label>
+        <select id="mv-status">${STATUSES.map(s =>
+          `<option value="${esc(s)}" ${s === defStatus ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+      <div><label class="f">実施日</label><input type="date" id="mv-date" value="${todayStr()}"></div>
+      <div><label class="f">担当者</label><input type="text" id="mv-op" value="${esc(state.settings.person || '')}"></div>
+      <div class="full"><label class="f">備考</label><input type="text" id="mv-note"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="mv-cancel">キャンセル</button>
+      <button class="btn primary" id="mv-ok">登録する</button>
+    </div>`);
+  $('#mv-cancel').onclick = closeModal;
+  $('#mv-ok').onclick = () => {
+    const loc = needLoc ? $('#mv-loc').value : null;
+    const st = $('#mv-status').value;
+    const date = $('#mv-date').value, op = $('#mv-op').value.trim(), note = $('#mv-note').value.trim();
+    const typeName = { in:'入庫', out:'出庫', move:'移動', status:'ステータス変更' }[kind];
+    vs.forEach(v => {
+      const before = `${v.location || '－'} / ${v.status || '－'}`;
+      if (needLoc) v.location = loc;
+      v.status = st;
+      if (kind === 'in' && date) v.arrivedAt = date;
+      v.updatedAt = nowStamp();
+      addHistory({ type:typeName, orderNo:v.orderNo, model:v.model,
+                   before, after:`${v.location || '－'} / ${v.status}`,
+                   operator:op, note: date ? `${date}${note ? ' / ' + note : ''}` : note });
+    });
+    save(); renderAll(); closeModal(); toast(`${vs.length}台を${typeName}処理しました`);
+  };
+}
+
+/* =========================================================
+   CSV 取込
+   ========================================================= */
+let csvHeaders = [], csvRows = [];
+
+function normKey(s){
+  return String(s || '').toLowerCase()
+    .replace(/[\s　_\-()（）]/g, '')
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+function autoMap(){
+  const norm = csvHeaders.map(normKey);
+  FIELDS.forEach(f => {
+    if (state.mapping[f.key] && csvHeaders.includes(state.mapping[f.key])) return;
+    const cands = [f.label, ...(f.aliases || [])].map(normKey);
+    let idx = norm.findIndex(h => cands.includes(h));
+    if (idx < 0) idx = norm.findIndex(h => h && cands.some(c => c.length >= 2 && h.includes(c)));
+    if (idx >= 0) state.mapping[f.key] = csvHeaders[idx];
+  });
+}
+function renderMapping(){
+  $('#map-grid').innerHTML = FIELDS.map(f => `
+    <div class="map-item">
+      <div class="lbl">${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</div>
+      <select data-field="${f.key}">
+        <option value="">（取り込まない）</option>
+        ${csvHeaders.map(h => `<option value="${esc(h)}" ${state.mapping[f.key] === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  $$('#map-grid select').forEach(sel => sel.onchange = () => {
+    state.mapping[sel.dataset.field] = sel.value;
+    save(); renderPreview();
+  });
+}
+
+function rowToVehicle(row){
+  const obj = {};
+  FIELDS.forEach(f => {
+    const col = state.mapping[f.key];
+    if (!col) return;
+    const i = csvHeaders.indexOf(col);
+    if (i < 0) return;
+    const raw = String(row[i] ?? '').trim();
+    obj[f.key] = f.type === 'date' ? normDate(raw) : raw;
+  });
+  return obj;
+}
+
+function buildImportPlan(){
+  const keepLoc = $('#opt-keep-loc').checked;
+  const skipEmpty = $('#opt-skip-empty').checked;
+  const plan = [];
+  csvRows.forEach((row, i) => {
+    const data = rowToVehicle(row);
+    if (!data.orderNo){ plan.push({ line:i+2, kind:'skip', reason:'注文書番号が空', data }); return; }
+    const exist = state.vehicles.find(v => v.orderNo === data.orderNo);
+    const changes = {};
+    FIELDS.forEach(f => {
+      if (!(f.key in data)) return;
+      const val = data[f.key];
+      if (skipEmpty && val === '') return;
+      if (keepLoc && (f.key === 'location' || f.key === 'status') && exist) return;
+      if (exist && (exist[f.key] ?? '') === val) return;
+      changes[f.key] = val;
+    });
+    plan.push({ line:i+2, kind: exist ? (Object.keys(changes).length ? 'update' : 'same') : 'new',
+                data, changes, exist });
+  });
+  return plan;
+}
+
+function renderPreview(){
+  if (!csvRows.length) return;
+  const plan = buildImportPlan();
+  const n = k => plan.filter(p => p.kind === k).length;
+  $('#imp-summary').innerHTML =
+    `<div class="row" style="gap:16px">
+      <span><span class="badge g">新規</span> ${n('new')} 件</span>
+      <span><span class="badge b">更新</span> ${n('update')} 件</span>
+      <span><span class="badge n">変更なし</span> ${n('same')} 件</span>
+      <span><span class="badge r">取込対象外</span> ${n('skip')} 件</span>
+    </div>`;
+
+  const cols = ['orderNo','model','grade','color','chassisNo','customer','deliveryDate','location','status'];
+  $('#prev-head').innerHTML = '<th>行</th><th>区分</th>' +
+    cols.map(k => `<th>${esc(FIELD_MAP[k].label)}</th>`).join('');
+  $('#prev-body').innerHTML = plan.slice(0, 300).map(p => {
+    const badge = { new:'<span class="badge g">新規</span>', update:'<span class="badge b">更新</span>',
+                    same:'<span class="badge n">変更なし</span>',
+                    skip:`<span class="badge r">対象外</span> <span class="muted">${esc(p.reason)}</span>` }[p.kind];
+    const cell = k => {
+      const v = p.data[k] ?? '';
+      const changed = p.changes && k in p.changes;
+      return `<td${changed ? ' style="background:var(--accent-soft)"' : ''}>${esc(v)}</td>`;
+    };
+    return `<tr><td class="num">${p.line}</td><td>${badge}</td>${cols.map(cell).join('')}</tr>`;
+  }).join('') + (plan.length > 300
+    ? `<tr><td colspan="${cols.length+2}" class="muted" style="text-align:center">…ほか ${plan.length-300} 行（取込は全件対象）</td></tr>` : '');
+}
+
+function runImport(){
+  const plan = buildImportPlan();
+  let added = 0, updated = 0;
+  plan.forEach(p => {
+    if (p.kind === 'new'){
+      const nv = Object.assign(
+        { id: nextId(), location:'', status: STATUSES[0], createdAt: nowStamp(), updatedAt: nowStamp() },
+        p.data);
+      if (!nv.status) nv.status = STATUSES[0];
+      state.vehicles.push(nv);
+      added++;
+    } else if (p.kind === 'update'){
+      Object.assign(p.exist, p.changes, { updatedAt: nowStamp() });
+      updated++;
+    }
+  });
+  addHistory({ type:'CSV取込', note:`新規 ${added} 件 / 更新 ${updated} 件`,
+               operator: state.settings.person || '' });
+  save(); renderAll();
+  toast(`取り込みました（新規 ${added} 件 / 更新 ${updated} 件）`);
+  renderPreview();
+}
+
+/* =========================================================
+   履歴
+   ========================================================= */
+function filteredHistory(){
+  const q = $('#h-q').value.trim().toLowerCase();
+  const type = $('#h-type').value, from = $('#h-from').value, to = $('#h-to').value;
+  return state.history.filter(h => {
+    if (type && h.type !== type) return false;
+    const day = String(h.ts || '').slice(0,10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    if (q){
+      const hay = [h.orderNo,h.model,h.operator,h.note,h.before,h.after].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+function renderHistory(){
+  const rows = filteredHistory();
+  $('#hist-body').innerHTML = rows.length ? rows.slice(0, 500).map(h =>
+    `<tr><td>${esc(h.ts)}</td><td><span class="badge n">${esc(h.type)}</span></td>
+      <td>${esc(h.orderNo)}</td><td>${esc(h.model)}</td>
+      <td class="muted">${esc(h.before)}</td><td>${esc(h.after)}</td>
+      <td>${esc(h.operator)}</td><td>${esc(h.note)}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="empty">該当する履歴がありません</td></tr>';
+  $('#hist-summary').textContent =
+    `${rows.length} 件（表示は最新500件まで／CSV出力は全件）`;
+}
+
+/* =========================================================
+   帳票
+   ========================================================= */
+let docSelected = new Set();
+
+function docCandidates(){
+  const q = $('#doc-q').value.trim().toLowerCase();
+  return state.vehicles.filter(v => {
+    if (v.status === '納車済' && !docSelected.has(v.id)) return false;
+    if (!q) return true;
+    return [v.orderNo,v.model,v.customer,v.chassisNo].join(' ').toLowerCase().includes(q);
+  }).sort((a,b) => (a.deliveryDate || '9999').localeCompare(b.deliveryDate || '9999'));
+}
+function renderDocList(){
+  const rows = docCandidates();
+  $('#doc-body').innerHTML = rows.length ? rows.map(v =>
+    `<tr><td><input type="checkbox" class="doc-chk" data-id="${v.id}" ${docSelected.has(v.id) ? 'checked' : ''}></td>
+      <td>${esc(v.orderNo)}</td><td>${esc(v.model)} <span class="muted">${esc(v.grade)}</span></td>
+      <td>${esc(v.color)}</td><td>${esc(v.chassisNo)}</td><td>${esc(v.customer)}</td>
+      <td>${esc(v.location || '－')}</td><td>${esc(v.deliveryDate || '－')}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="empty">対象となる車両がありません</td></tr>';
+  $('#doc-count').textContent = `${docSelected.size} 台を選択中`;
+  $('#doc-print').disabled = !$('#print-area').innerHTML;
+}
+
+function companyBlock(){
+  const s = state.settings;
+  return [s.company, s.dept, s.addr, s.tel ? 'TEL：' + s.tel : '', s.fax ? 'FAX：' + s.fax : '',
+          s.person ? '担当：' + s.person : '']
+    .filter(Boolean).map(esc).join('<br>');
+}
+
+function buildRequestDoc(vs){
+  const vendor = $('#doc-vendor').value || '　　　　　　　　';
+  const date = $('#doc-date').value || todayStr();
+  const due = $('#doc-due').value;
+  const note = $('#doc-note').value;
+  return `<div class="doc">
+    <h2 class="title">納車依頼書</h2>
+    <div class="meta">
+      <div><div class="to">${esc(vendor)} 御中</div></div>
+      <div class="from">発行日：${esc(date)}<br>${companyBlock()}</div>
+    </div>
+    <div class="lead">平素より大変お世話になっております。<br>
+      下記車両につきまして、納車業務をご依頼いたします。ご確認のほどよろしくお願いいたします。
+      ${due ? `<br><strong>希望納車日：${esc(due)}</strong>` : ''}</div>
+    <table>
+      <thead><tr>
+        <th style="width:8mm">No</th><th style="width:22mm">注文書番号</th><th>車種・グレード・色</th>
+        <th style="width:30mm">車台番号</th><th>納車先（顧客名）</th>
+        <th style="width:20mm">納車予定日</th><th style="width:22mm">保管場所</th>
+      </tr></thead>
+      <tbody>${vs.map((v,i) => `<tr>
+        <td style="text-align:center">${i+1}</td><td>${esc(v.orderNo)}</td>
+        <td>${esc(v.model)}${v.grade ? ' / ' + esc(v.grade) : ''}${v.color ? '<br>' + esc(v.color) : ''}</td>
+        <td>${esc(v.chassisNo)}</td><td>${esc(v.customer)}</td>
+        <td>${esc(v.deliveryDate || '')}</td><td>${esc(v.location || '')}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="margin-bottom:3mm; font-weight:600">連絡事項</div>
+    <div class="note-box">${esc(note).replace(/\n/g,'<br>')}</div>
+    <div class="sign">
+      <div class="box">担当</div><div class="box">確認</div><div class="box">承認</div>
+    </div>
+  </div>`;
+}
+
+function buildSlipDoc(v){
+  const date = $('#doc-date').value || todayStr();
+  const note = $('#doc-note').value;
+  const kv = [
+    ['注文書番号', v.orderNo], ['受注日', v.orderDate],
+    ['車種', v.model],         ['グレード', v.grade],
+    ['色', v.color],           ['車台番号', v.chassisNo],
+    ['登録番号', v.regNo],      ['ステータス', v.status],
+    ['顧客名', v.customer],     ['連絡先', v.customerTel],
+    ['顧客住所', v.customerAddr],['店舗', v.dealer],
+    ['保管場所', v.location],   ['営業担当', v.salesRep],
+    ['入庫日', v.arrivedAt],    ['納車予定日', v.deliveryDate],
+  ];
+  return `<div class="doc">
+    <h2 class="title">車両伝票</h2>
+    <div class="meta">
+      <div style="font-size:12pt">発行日：${esc(date)}</div>
+      <div class="from">${companyBlock()}</div>
+    </div>
+    <div class="kv">${kv.map(([k,val]) =>
+      `<div>${esc(k)}</div><div>${esc(val || '')}</div>`).join('')}</div>
+    <div style="margin:6mm 0 3mm; font-weight:600">積載・輸送記録</div>
+    <table>
+      <thead><tr><th style="width:26mm">積込日</th><th>積込元</th><th>積卸先</th><th style="width:30mm">ドライバー</th><th style="width:24mm">受領印</th></tr></thead>
+      <tbody>${'<tr><td style="height:9mm"></td><td></td><td></td><td></td><td></td></tr>'.repeat(3)}</tbody>
+    </table>
+    <div style="margin-bottom:3mm; font-weight:600">特記事項</div>
+    <div class="note-box">${esc(note).replace(/\n/g,'<br>')}${v.memo ? '<br>' + esc(v.memo) : ''}</div>
+    <div class="sign"><div class="box">担当</div><div class="box">確認</div></div>
+  </div>`;
+}
+
+function buildDocs(){
+  const vs = Array.from(docSelected).map(id => state.vehicles.find(v => v.id === id)).filter(Boolean);
+  if (!vs.length){ toast('対象車両を選択してください'); return; }
+  const type = $('#doc-type').value;
+  const html = type === 'request'
+    ? buildRequestDoc(vs)
+    : vs.map(buildSlipDoc).join('');
+  $('#print-area').innerHTML = html;
+  $('#doc-preview').innerHTML = html;
+  $('#doc-preview-panel').style.display = '';
+  $('#doc-print').disabled = false;
+  $('#doc-preview-panel').scrollIntoView({ behavior:'smooth', block:'start' });
+
+  if (type === 'request'){
+    const vendor = $('#doc-vendor').value;
+    vs.forEach(v => { if (vendor) v.vendor = vendor; });
+    addHistory({ type:'帳票発行', note:`納車依頼書 ${vs.length}台${vendor ? '／依頼先：' + vendor : ''}`,
+                 operator: state.settings.person || '' });
+    save(); renderList();
+  }
+}
+
+/* =========================================================
+   設定・マスタ
+   ========================================================= */
+function renderMasters(){
+  const chips = (arr, cls) => arr.map((v,i) =>
+    `<span class="chip">${esc(v)}<button data-kind="${cls}" data-i="${i}" title="削除">×</button></span>`).join('')
+    || '<span class="muted">未登録</span>';
+  $('#loc-chips').innerHTML = chips(state.locations, 'loc');
+  $('#ven-chips').innerHTML = chips(state.vendors, 'ven');
+  $$('.chip button').forEach(b => b.onclick = () => {
+    const arr = b.dataset.kind === 'loc' ? state.locations : state.vendors;
+    const name = arr[b.dataset.i];
+    const used = b.dataset.kind === 'loc' && state.vehicles.some(v => v.location === name);
+    if (used && !confirm(`拠点「${name}」を使用中の車両があります。削除しますか？（車両側の値はそのまま残ります）`)) return;
+    arr.splice(b.dataset.i, 1);
+    save(); renderAll();
+  });
+  const s = state.settings;
+  $('#s-company').value = s.company || ''; $('#s-dept').value = s.dept || '';
+  $('#s-person').value = s.person || '';   $('#s-tel').value = s.tel || '';
+  $('#s-fax').value = s.fax || '';         $('#s-addr').value = s.addr || '';
+}
+
+/* =========================================================
+   イベント配線
+   ========================================================= */
+/* タブ */
+$$('nav.tabs button').forEach(b => b.onclick = () => {
+  $$('nav.tabs button').forEach(x => x.classList.remove('active'));
+  $$('.view').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  $('#view-' + b.dataset.view).classList.add('active');
+});
+
+/* 一覧：絞り込み */
+['#f-q','#f-loc','#f-status','#f-from','#f-to'].forEach(s =>
+  $(s).addEventListener('input', renderList));
+$('#f-clear').onclick = () => {
+  ['#f-q','#f-loc','#f-status','#f-from','#f-to'].forEach(s => $(s).value = '');
+  renderList();
+};
+$$('th[data-sort]').forEach(th => th.onclick = () => {
+  const k = th.dataset.sort;
+  if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = true; }
+  renderList();
+});
+
+/* 一覧：選択・行アクション */
+$('#list-body').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (btn){
+    const id = btn.dataset.id;
+    if (btn.classList.contains('act-edit')) editVehicle(id);
+    else if (btn.classList.contains('act-in'))   movementModal('in', [id]);
+    else if (btn.classList.contains('act-out'))  movementModal('out', [id]);
+    else if (btn.classList.contains('act-move')) movementModal('move', [id]);
+    return;
+  }
+  const chk = e.target.closest('.row-chk');
+  if (chk){
+    if (chk.checked) selected.add(chk.dataset.id); else selected.delete(chk.dataset.id);
+    chk.closest('tr').classList.toggle('sel', chk.checked);
+    updateSelUI();
+  }
+});
+$('#chk-all').onclick = () => {
+  const shown = filteredVehicles();
+  const on = $('#chk-all').checked;
+  shown.forEach(v => on ? selected.add(v.id) : selected.delete(v.id));
+  renderList();
+};
+$('#btn-new').onclick = () => editVehicle(null);
+$('#bulk-move').onclick   = () => movementModal('move',   Array.from(selected));
+$('#bulk-status').onclick = () => movementModal('status', Array.from(selected));
+$('#bulk-del').onclick = () => {
+  if (!confirm(`選択中の ${selected.size} 台を削除します。よろしいですか？`)) return;
+  Array.from(selected).forEach(id => {
+    const v = state.vehicles.find(x => x.id === id);
+    if (v) addHistory({ type:'削除', orderNo:v.orderNo, model:v.model, before:`${v.location} / ${v.status}` });
+  });
+  state.vehicles = state.vehicles.filter(v => !selected.has(v.id));
+  selected.clear(); save(); renderAll(); toast('削除しました');
+};
+function toDocsWith(type){
+  docSelected = new Set(selected);
+  $('#doc-type').value = type;
+  $('#doc-type').dispatchEvent(new Event('change'));
+  $$('nav.tabs button').forEach(x => x.classList.remove('active'));
+  $$('.view').forEach(x => x.classList.remove('active'));
+  document.querySelector('nav.tabs button[data-view="docs"]').classList.add('active');
+  $('#view-docs').classList.add('active');
+  renderDocList();
+  window.scrollTo({ top:0 });
+}
+$('#bulk-req').onclick  = () => toDocsWith('request');
+$('#bulk-slip').onclick = () => toDocsWith('slip');
+
+$('#btn-export').onclick = () => {
+  const rows = filteredVehicles();
+  const cols = FIELDS.map(f => f.key);
+  download(`車両一覧_${todayStr()}.csv`,
+    toCSV(FIELDS.map(f => f.label), rows.map(v => cols.map(k => v[k] ?? ''))),
+    'text/csv;charset=utf-8');
+  toast(`${rows.length} 件を書き出しました`);
+};
+
+/* CSV取込 */
+$('#csv-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const { text, encoding } = await readCSVFile(file);
+  const rows = parseCSV(text);
+  if (rows.length < 2){ toast('データ行が見つかりませんでした'); return; }
+  csvHeaders = rows[0].map(h => String(h).trim());
+  csvRows = rows.slice(1);
+  $('#csv-info').innerHTML =
+    `<strong>${esc(file.name)}</strong>　${csvRows.length} 行 / ${csvHeaders.length} 列　文字コード：${esc(encoding)}`;
+  autoMap(); save();
+  $('#map-panel').style.display = ''; $('#imp-panel').style.display = '';
+  renderMapping(); renderPreview();
+});
+$('#csv-reset').onclick = () => {
+  csvHeaders = []; csvRows = []; $('#csv-file').value = ''; $('#csv-info').textContent = '';
+  $('#map-panel').style.display = 'none'; $('#imp-panel').style.display = 'none';
+};
+$('#map-auto').onclick  = () => { state.mapping = {}; autoMap(); save(); renderMapping(); renderPreview(); toast('列名から自動で対応づけました'); };
+$('#map-clear').onclick = () => { state.mapping = {}; save(); renderMapping(); renderPreview(); };
+$('#opt-keep-loc').onchange = renderPreview;
+$('#opt-skip-empty').onchange = renderPreview;
+$('#btn-import').onclick = () => {
+  if (!state.mapping.orderNo){ toast('「注文書番号」の対応づけは必須です'); return; }
+  runImport();
+};
+
+/* 履歴 */
+['#h-q','#h-type','#h-from','#h-to'].forEach(s => $(s).addEventListener('input', renderHistory));
+$('#h-clear').onclick = () => { ['#h-q','#h-type','#h-from','#h-to'].forEach(s => $(s).value = ''); renderHistory(); };
+$('#h-export').onclick = () => {
+  const rows = filteredHistory();
+  download(`入出庫履歴_${todayStr()}.csv`,
+    toCSV(['日時','種別','注文書番号','車種','変更前','変更後','担当者','備考'],
+      rows.map(h => [h.ts,h.type,h.orderNo,h.model,h.before,h.after,h.operator,h.note])),
+    'text/csv;charset=utf-8');
+  toast(`${rows.length} 件を書き出しました`);
+};
+
+/* 帳票 */
+$('#doc-type').addEventListener('change', () => {
+  const isReq = $('#doc-type').value === 'request';
+  $('#wrap-vendor').style.display = isReq ? '' : 'none';
+  $('#wrap-due').style.display    = isReq ? '' : 'none';
+});
+$('#doc-q').addEventListener('input', renderDocList);
+$('#doc-body').addEventListener('change', e => {
+  const chk = e.target.closest('.doc-chk');
+  if (!chk) return;
+  if (chk.checked) docSelected.add(chk.dataset.id); else docSelected.delete(chk.dataset.id);
+  $('#doc-count').textContent = `${docSelected.size} 台を選択中`;
+});
+$('#doc-all').onclick  = () => { docCandidates().forEach(v => docSelected.add(v.id)); renderDocList(); };
+$('#doc-none').onclick = () => { docSelected.clear(); renderDocList(); };
+$('#doc-build').onclick = buildDocs;
+$('#doc-print').onclick = () => window.print();
+
+/* 設定 */
+$('#loc-add').onclick = () => {
+  const v = $('#loc-new').value.trim();
+  if (!v) return;
+  if (state.locations.includes(v)){ toast('既に登録されています'); return; }
+  state.locations.push(v); $('#loc-new').value = ''; save(); renderAll(); toast('拠点を追加しました');
+};
+$('#ven-add').onclick = () => {
+  const v = $('#ven-new').value.trim();
+  if (!v) return;
+  if (state.vendors.includes(v)){ toast('既に登録されています'); return; }
+  state.vendors.push(v); $('#ven-new').value = ''; save(); renderAll(); toast('業者を追加しました');
+};
+$('#loc-new').addEventListener('keydown', e => { if (e.key === 'Enter') $('#loc-add').click(); });
+$('#ven-new').addEventListener('keydown', e => { if (e.key === 'Enter') $('#ven-add').click(); });
+$('#s-save').onclick = () => {
+  state.settings = {
+    company:$('#s-company').value.trim(), dept:$('#s-dept').value.trim(),
+    person:$('#s-person').value.trim(),   tel:$('#s-tel').value.trim(),
+    fax:$('#s-fax').value.trim(),         addr:$('#s-addr').value.trim(),
+  };
+  save(); toast('自社情報を保存しました');
+};
+
+/* バックアップ */
+$('#bk-export').onclick = () => {
+  download(`入出庫管理_バックアップ_${todayStr()}.json`,
+    JSON.stringify(state, null, 2), 'application/json');
+  toast('バックアップを書き出しました');
+};
+$('#bk-import').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data.vehicles)) throw new Error('形式が違います');
+    if (!confirm(`バックアップを読み込みます。現在のデータ（車両 ${state.vehicles.length} 件）は上書きされます。よろしいですか？`)) return;
+    state = Object.assign(DEFAULT_STATE(), data);
+    save(); renderAll(); toast(`復元しました（車両 ${state.vehicles.length} 件）`);
+  } catch (err) {
+    toast('読み込みに失敗しました：' + err.message);
+  } finally {
+    e.target.value = '';
+  }
+});
+$('#bk-clear').onclick = () => {
+  if (!confirm('全データを削除します。この操作は取り消せません。よろしいですか？')) return;
+  if (!confirm('本当によろしいですか？　事前にバックアップの書き出しを推奨します。')) return;
+  state = DEFAULT_STATE(); selected.clear(); docSelected.clear();
+  save(); renderAll(); toast('全データを削除しました');
+};
+
+/* =========================================================
+   初期化
+   ========================================================= */
+load();
+$('#doc-date').value = todayStr();
+$('#doc-type').dispatchEvent(new Event('change'));
+renderAll();
+</script>
+</body>
+</html>
