@@ -1,0 +1,2 @@
+# バッチは Windows のメモ帳・cmd で読めるよう Shift_JIS + CRLF のまま保存する
+*.bat -text
